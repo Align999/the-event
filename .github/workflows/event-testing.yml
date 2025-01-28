@@ -1,0 +1,262 @@
+name: Event Features Testing
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test Type'
+        required: true
+        default: 'setup'
+        type: choice
+        options:
+        - setup
+        - create-event
+        - list-events
+        - event-details
+        - guest-management
+
+jobs:
+  test-features:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Setup Test Environment
+        if: github.event.inputs.test_type == 'setup'
+        run: |
+          # Create test pages directory
+          mkdir -p src/app/test
+          
+          # Create test homepage
+          cat > src/app/test/page.tsx << 'EOL'
+          import Link from 'next/link'
+
+          export default function TestPage() {
+            return (
+              <div className="p-8">
+                <h1 className="text-2xl font-bold mb-6">Event Feature Testing</h1>
+                <div className="space-y-4">
+                  <Link 
+                    href="/events/new" 
+                    className="block p-4 bg-blue-100 rounded hover:bg-blue-200"
+                  >
+                    Test Create Event
+                  </Link>
+                  <Link 
+                    href="/events" 
+                    className="block p-4 bg-green-100 rounded hover:bg-green-200"
+                  >
+                    Test Event List
+                  </Link>
+                  <Link 
+                    href="/events/view" 
+                    className="block p-4 bg-purple-100 rounded hover:bg-purple-200"
+                  >
+                    Test Event Details
+                  </Link>
+                  <Link 
+                    href="/events/guests" 
+                    className="block p-4 bg-yellow-100 rounded hover:bg-yellow-200"
+                  >
+                    Test Guest Management
+                  </Link>
+                </div>
+              </div>
+            );
+          }
+          EOL
+
+      - name: Create Event Testing
+        if: github.event.inputs.test_type == 'create-event'
+        run: |
+          # Update EventForm component with test logging
+          cat > src/components/Events/EventForm.tsx << 'EOL'
+          'use client';
+          import { useState } from 'react';
+          import { supabase } from '@/lib/supabaseClient';
+          import toast from 'react-hot-toast';
+
+          export default function EventForm() {
+            const [title, setTitle] = useState('');
+            const [description, setDescription] = useState('');
+            const [startDate, setStartDate] = useState('');
+            const [endDate, setEndDate] = useState('');
+            const [loading, setLoading] = useState(false);
+
+            async function handleSubmit(e: React.FormEvent) {
+              e.preventDefault();
+              setLoading(true);
+              console.log('Creating event:', { title, description, startDate, endDate });
+
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error('Not authenticated');
+
+                const { data, error } = await supabase
+                  .from('events')
+                  .insert([
+                    {
+                      creator_id: user.id,
+                      title,
+                      description,
+                      start_date: startDate,
+                      end_date: endDate
+                    }
+                  ])
+                  .select()
+                  .single();
+
+                if (error) throw error;
+                console.log('Event created:', data);
+                toast.success('Event created successfully!');
+              } catch (error) {
+                console.error('Error:', error);
+                toast.error('Failed to create event');
+              } finally {
+                setLoading(false);
+              }
+            }
+
+            return (
+              <form onSubmit={handleSubmit} className="space-y-4 p-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Title</label>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Description</label>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Start Date</label>
+                  <input
+                    type="datetime-local"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">End Date</label>
+                  <input
+                    type="datetime-local"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700"
+                >
+                  {loading ? 'Creating...' : 'Create Event'}
+                </button>
+              </form>
+            );
+          }
+          EOL
+
+      - name: List Events Testing
+        if: github.event.inputs.test_type == 'list-events'
+        run: |
+          cat > src/components/Events/EventList.tsx << 'EOL'
+          'use client';
+          import { useEffect, useState } from 'react';
+          import { supabase } from '@/lib/supabaseClient';
+
+          interface Event {
+            id: string;
+            title: string;
+            description: string;
+            start_date: string;
+            end_date: string;
+          }
+
+          export default function EventList() {
+            const [events, setEvents] = useState<Event[]>([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState<string | null>(null);
+
+            useEffect(() => {
+              loadEvents();
+            }, []);
+
+            async function loadEvents() {
+              try {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) throw new Error('Not authenticated');
+
+                const { data, error } = await supabase
+                  .from('events')
+                  .select('*')
+                  .eq('creator_id', user.id)
+                  .order('start_date', { ascending: true });
+
+                if (error) throw error;
+                
+                setEvents(data || []);
+              } catch (error) {
+                console.error('Error:', error);
+                setError('Failed to load events');
+              } finally {
+                setLoading(false);
+              }
+            }
+
+            if (loading) return <div>Loading events...</div>;
+            if (error) return <div>Error: {error}</div>;
+
+            return (
+              <div className="space-y-4 p-4">
+                {events.length === 0 ? (
+                  <p>No events found</p>
+                ) : (
+                  events.map(event => (
+                    <div key={event.id} className="border rounded-lg p-4">
+                      <h3 className="font-bold">{event.title}</h3>
+                      <p className="text-gray-600">{event.description}</p>
+                      <div className="mt-2 text-sm text-gray-500">
+                        <p>Starts: {new Date(event.start_date).toLocaleString()}</p>
+                        <p>Ends: {new Date(event.end_date).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            );
+          }
+          EOL
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Commit Changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Setup test environment: ${{ github.event.inputs.test_type }}" || echo "No changes to commit"
+          git push || echo "No changes to push"
