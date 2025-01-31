@@ -1,0 +1,142 @@
+name: Auth Phase Completion
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'Implementation Step'
+        required: true
+        default: 'database'
+        type: choice
+        options:
+        - database
+        - protected-routes
+        - session-handling
+
+jobs:
+  complete-auth:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Database Setup
+        if: github.event.inputs.step == 'database'
+        run: |
+          echo "Setting up Supabase tables..."
+          mkdir -p supabase/migrations
+          cat > supabase/migrations/00_auth.sql << 'EOL'
+          -- Create profiles table
+          create table public.profiles (
+            id uuid references auth.users primary key,
+            username text unique,
+            full_name text,
+            avatar_url text,
+            updated_at timestamp with time zone
+          );
+
+          -- Enable RLS
+          alter table public.profiles enable row level security;
+
+          -- Create policies
+          create policy "Public profiles are viewable by everyone"
+            on profiles for select
+            using ( true );
+
+          create policy "Users can insert their own profile."
+            on profiles for insert
+            with check ( auth.uid() = id );
+
+          create policy "Users can update own profile."
+            on profiles for update
+            using ( auth.uid() = id );
+          EOL
+
+      - name: Protected Routes Setup
+        if: github.event.inputs.step == 'protected-routes'
+        run: |
+          echo "Setting up protected routes..."
+          cat > src/middleware.ts << 'EOL'
+          import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+          import { NextResponse } from 'next/server';
+          import type { NextRequest } from 'next/server';
+
+          export async function middleware(req: NextRequest) {
+            const res = NextResponse.next();
+            const supabase = createMiddlewareClient({ req, res });
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if (!session && req.nextUrl.pathname.startsWith('/protected')) {
+              return NextResponse.redirect(new URL('/auth/signin', req.url));
+            }
+
+            return res;
+          }
+
+          export const config = {
+            matcher: ['/protected/:path*', '/auth/profile']
+          };
+          EOL
+
+      - name: Session Handling Setup
+        if: github.event.inputs.step == 'session-handling'
+        run: |
+          echo "Setting up session handling..."
+          cat > src/context/AuthContext.tsx << 'EOL'
+          'use client';
+          import { createContext, useContext, useEffect, useState } from 'react';
+          import { supabase } from '@/lib/supabaseClient';
+          import { Session, User } from '@supabase/supabase-js';
+
+          type AuthContextType = {
+            user: User | null;
+            session: Session | null;
+            loading: boolean;
+          };
+
+          const AuthContext = createContext<AuthContextType>({
+            user: null,
+            session: null,
+            loading: true
+          });
+
+          export function AuthProvider({ children }: { children: React.ReactNode }) {
+            const [user, setUser] = useState<User | null>(null);
+            const [session, setSession] = useState<Session | null>(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+              const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+                setSession(session);
+                setUser(session?.user ?? null);
+                setLoading(false);
+              });
+
+              return () => subscription.unsubscribe();
+            }, []);
+
+            return (
+              <AuthContext.Provider value={{ user, session, loading }}>
+                {children}
+              </AuthContext.Provider>
+            );
+          }
+
+          export const useAuth = () => useContext(AuthContext);
+          EOL
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Commit Changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Complete auth phase: ${{ github.event.inputs.step }}" || echo "No changes to commit"
+          git push || echo "No changes to push"

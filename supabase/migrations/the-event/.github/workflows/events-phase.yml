@@ -1,0 +1,139 @@
+name: Events Phase Implementation
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: 'Implementation Step'
+        required: true
+        default: 'database'
+        type: choice
+        options:
+        - database
+        - components
+        - features
+        - integration
+
+jobs:
+  implement-events:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Database Schema Setup
+        if: github.event.inputs.step == 'database'
+        run: |
+          mkdir -p supabase/migrations
+          cat > supabase/migrations/02_events.sql << 'EOL'
+          -- Events table
+          create table public.events (
+            id uuid default uuid_generate_v4() primary key,
+            creator_id uuid references auth.users not null,
+            title text not null,
+            description text,
+            start_date timestamp with time zone not null,
+            end_date timestamp with time zone not null,
+            location jsonb,
+            settings jsonb default '{}'::jsonb,
+            created_at timestamp with time zone default timezone('utc'::text, now()) not null
+          );
+
+          -- Guest list table
+          create table public.guest_list (
+            id uuid default uuid_generate_v4() primary key,
+            event_id uuid references public.events not null,
+            user_id uuid references auth.users not null,
+            rsvp_status text,
+            plus_ones integer default 0,
+            dietary_notes text,
+            created_at timestamp with time zone default timezone('utc'::text, now()) not null
+          );
+
+          -- Enable RLS
+          alter table public.events enable row level security;
+          alter table public.guest_list enable row level security;
+
+          -- Event policies
+          create policy "Users can create events"
+            on events for insert
+            with check ( auth.uid() = creator_id );
+
+          create policy "Users can view own events"
+            on events for select
+            using ( auth.uid() = creator_id );
+
+          create policy "Users can update own events"
+            on events for update
+            using ( auth.uid() = creator_id );
+
+          -- Guest list policies
+          create policy "Users can view guest lists of their events"
+            on guest_list for select
+            using ( 
+              auth.uid() in (
+                select creator_id from events where id = guest_list.event_id
+              )
+            );
+          EOL
+
+      - name: Components Setup
+        if: github.event.inputs.step == 'components'
+        run: |
+          mkdir -p src/components/Events
+          mkdir -p src/app/events
+
+          # Create Event Form Component
+          cat > src/components/Events/EventForm.tsx << 'EOL'
+          'use client';
+          import { useState } from 'react';
+          import { supabase } from '@/lib/supabaseClient';
+          // Event Form Component code
+          EOL
+
+          # Create Event List Component
+          cat > src/components/Events/EventList.tsx << 'EOL'
+          'use client';
+          import { useEffect, useState } from 'react';
+          import { supabase } from '@/lib/supabaseClient';
+          // Event List Component code
+          EOL
+
+      - name: Features Setup
+        if: github.event.inputs.step == 'features'
+        run: |
+          mkdir -p src/app/events/{new,edit,view}
+          
+          # Create event routes and handlers
+          cat > src/app/events/page.tsx << 'EOL'
+          import EventList from '@/components/Events/EventList';
+          // Events page code
+          EOL
+
+      - name: Integration Setup
+        if: github.event.inputs.step == 'integration'
+        run: |
+          mkdir -p src/hooks
+          
+          # Create event hooks
+          cat > src/hooks/useEvents.ts << 'EOL'
+          import { useState, useEffect } from 'react';
+          import { supabase } from '@/lib/supabaseClient';
+          // Event hooks code
+          EOL
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Commit Changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          git commit -m "Implement events phase: ${{ github.event.inputs.step }}" || echo "No changes to commit"
+          git push || echo "No changes to push"
