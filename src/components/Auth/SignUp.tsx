@@ -1,4 +1,3 @@
-// src/components/Auth/SignUp.tsx
 'use client';
 import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
@@ -15,6 +14,7 @@ export default function SignUp() {
     setLoading(true);
     setError(null);
 
+    // Validate password match
     if (password !== confirmPassword) {
       setError('Passwords do not match');
       setLoading(false);
@@ -28,8 +28,12 @@ export default function SignUp() {
       });
 
       if (error) throw error;
+
+      // Handle successful sign-up (optional)
+      console.log('Sign-up successful:', data);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'An error occurred');
+      // Handle errors
+      setError(error instanceof Error ? error.message : 'An error occurred during sign-up.');
     } finally {
       setLoading(false);
     }
@@ -43,12 +47,15 @@ export default function SignUp() {
             Create your account
           </h2>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSignUp}>
+        <form className="mt-8 space-y-6" onSubmit={handleSignUp} role="form">
+          {/* Error message */}
           {error && (
             <div className="bg-red-50 border-l-4 border-red-400 p-4 text-red-700">
               {error}
             </div>
           )}
+
+          {/* Email input */}
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
               <label htmlFor="email" className="sr-only">
@@ -65,6 +72,8 @@ export default function SignUp() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
+
+            {/* Password input */}
             <div>
               <label htmlFor="password" className="sr-only">
                 Password
@@ -80,6 +89,8 @@ export default function SignUp() {
                 onChange={(e) => setPassword(e.target.value)}
               />
             </div>
+
+            {/* Confirm password input */}
             <div>
               <label htmlFor="confirm-password" className="sr-only">
                 Confirm Password
@@ -97,6 +108,7 @@ export default function SignUp() {
             </div>
           </div>
 
+          {/* Submit button */}
           <div>
             <button
               type="submit"

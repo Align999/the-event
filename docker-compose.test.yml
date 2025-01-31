@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  test-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - NODE_ENV=test
+      - NEXT_PUBLIC_TESTING_ENABLED=true
+      - NEXT_PUBLIC_SUPABASE_URL=${TEST_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${TEST_SUPABASE_ANON_KEY}
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  test-db:
+    image: supabase/postgres
+    environment:
+      - POSTGRES_PASSWORD=test_password
+      - POSTGRES_DB=test_db
+    ports:
+      - "5433:5432"
