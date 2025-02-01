@@ -1,4 +1,5 @@
 name: Database Setup
+
 on:
   workflow_dispatch: # Manually trigger the workflow
   push:
@@ -19,8 +20,15 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install Homebrew
+        run: |
+          /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+          echo 'export PATH="/home/linuxbrew/.linuxbrew/bin:$PATH"' >> ~/.bashrc
+          source ~/.bashrc
+
       - name: Install Supabase CLI
-        run: npm install -g supabase
+        run: |
+          brew install supabase/tap/supabase
 
       - name: Log in to Supabase
         run: supabase login
