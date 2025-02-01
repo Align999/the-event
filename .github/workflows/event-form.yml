@@ -1,0 +1,164 @@
+# Add content to the workflow file
+$workflowContent = @'
+name: Event Form CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npx shadcn-ui@latest add card
+          npx shadcn-ui@latest add alert
+
+      - name: Create test file
+        run: |
+          mkdir -p __tests__
+          cat > __tests__/EventCreationForm.test.tsx << 'EOL'
+          import React from 'react';
+          import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+          import { vi } from 'vitest';
+          import EventCreationForm from '../components/EventCreationForm';
+
+          // Mock window.supabase
+          const mockSupabase = {
+            auth: {
+              getUser: vi.fn()
+            },
+            from: vi.fn()
+          };
+
+          beforeAll(() => {
+            window.supabase = mockSupabase;
+          });
+
+          describe('EventCreationForm', () => {
+            beforeEach(() => {
+              mockSupabase.auth.getUser.mockReset();
+              mockSupabase.from.mockReset();
+            });
+
+            it('renders all form fields', () => {
+              render(<EventCreationForm />);
+              
+              expect(screen.getByLabelText(/event title/i)).toBeInTheDocument();
+              expect(screen.getByLabelText(/description/i)).toBeInTheDocument();
+              expect(screen.getByLabelText(/date/i)).toBeInTheDocument();
+              expect(screen.getByLabelText(/time/i)).toBeInTheDocument();
+              expect(screen.getByLabelText(/location/i)).toBeInTheDocument();
+              expect(screen.getByLabelText(/maximum guests/i)).toBeInTheDocument();
+            });
+
+            it('shows error when user is not logged in', async () => {
+              mockSupabase.auth.getUser.mockResolvedValue({ data: { user: null } });
+              
+              render(<EventCreationForm />);
+              
+              fireEvent.click(screen.getByRole('button', { name: /create/i }));
+              
+              await waitFor(() => {
+                expect(screen.getByText(/must be logged in/i)).toBeInTheDocument();
+              });
+            });
+
+            it('submits form data successfully', async () => {
+              mockSupabase.auth.getUser.mockResolvedValue({
+                data: { user: { id: 'test-user-id' } }
+              });
+              
+              mockSupabase.from.mockReturnValue({
+                insert: () => ({
+                  select: () => Promise.resolve({ data: [{ id: 'new-event-id' }], error: null })
+                })
+              });
+              
+              render(<EventCreationForm />);
+              
+              // Fill out the form
+              fireEvent.change(screen.getByLabelText(/event title/i), {
+                target: { value: 'Test Event' }
+              });
+              fireEvent.change(screen.getByLabelText(/description/i), {
+                target: { value: 'Test Description' }
+              });
+              fireEvent.change(screen.getByLabelText(/date/i), {
+                target: { value: '2025-12-31' }
+              });
+              fireEvent.change(screen.getByLabelText(/time/i), {
+                target: { value: '12:00' }
+              });
+              fireEvent.change(screen.getByLabelText(/location/i), {
+                target: { value: 'Test Location' }
+              });
+              fireEvent.change(screen.getByLabelText(/maximum guests/i), {
+                target: { value: '100' }
+              });
+              
+              fireEvent.click(screen.getByRole('button', { name: /create/i }));
+              
+              await waitFor(() => {
+                expect(screen.getByText(/event created successfully/i)).toBeInTheDocument();
+              });
+            });
+
+            it('handles database errors', async () => {
+              mockSupabase.auth.getUser.mockResolvedValue({
+                data: { user: { id: 'test-user-id' } }
+              });
+              
+              mockSupabase.from.mockReturnValue({
+                insert: () => ({
+                  select: () => Promise.resolve({
+                    error: { message: 'Database error' }
+                  })
+                })
+              });
+              
+              render(<EventCreationForm />);
+              
+              fireEvent.click(screen.getByRole('button', { name: /create/i }));
+              
+              await waitFor(() => {
+                expect(screen.getByText(/database error/i)).toBeInTheDocument();
+              });
+            });
+          });
+          EOL
+
+      - name: Run tests
+        run: npm test
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: coverage/
+'@
+
+Set-Content -Path ".github/workflows/event-form.yml" -Value $workflowContent
+
+# Now commit and push
+git add .github/workflows/event-form.yml
+git commit -m "Add Event Form CI workflow"
+git push origin main
